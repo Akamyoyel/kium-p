@@ -19,8 +19,8 @@ env/
 .ipynb_checkpoints/
 
 # Data and models
-data/
-models/
+/data/
+/models/
 *.h5
 
 # Editor

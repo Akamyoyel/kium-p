@@ -371,6 +371,12 @@ def create_windows(
     n = len(df)
     n_samples = n - window_size - horizon + 1
 
+    if n_samples <= 0:
+        return (
+            np.zeros((0, window_size, len(feature_cols)), dtype=np.float32),
+            np.zeros((0, horizon), dtype=np.float32),
+        )
+
     X = np.zeros((n_samples, window_size, len(feature_cols)), dtype=np.float32)
     y = np.zeros((n_samples, horizon),                         dtype=np.float32)
 
@@ -407,6 +413,11 @@ def create_all_windows(
         splits[f"X_{name}"] = X
         splits[f"y_{name}"] = y
         print(f"  {name:5s}: X={X.shape}, y={y.shape}")
+        if X.shape[0] == 0:
+            print(
+                f"    경고: {name} split 데이터가 부족합니다 "
+                f"(필요 최소 행 수: window_size({WINDOW_SIZE}) + horizon({HORIZON}))"
+            )
 
     np.savez_compressed(save_dir / "windows.npz", **splits)
     print(f"\n  Window 저장: {save_dir / 'windows.npz'}")
