@@ -1,0 +1,60 @@
+3. 주차별 수행 내용 및 활동자료 (5차시 — 확장/보강본)
+
+※ 작성 방향
+- 기존에 정리된 5차시 수행내용(코드 기반 서술)에, 활동보고서(.docx)의 “3. 주차별 수행 내용 및 활동자료”에 기재된 핵심 수치/해석/그림 설명을 중심으로 내용을 덧붙여 분량을 확장함.
+- 문장형 보고서 톤을 유지하되, 근거가 되는 코드/산출물 위치는 활동자료 항목으로 명확히 제시함.
+
+1) 5차시 수행 내용: LSTM Baseline Point Prediction (MSE)
+
+[1] Baseline 모델 구조 설계 및 구현
+- 6차시(Quantile LSTM)와의 성능 비교 기준점을 확보하기 위해, 확률 예측(분위수) 이전 단계인 단일 점 예측(Point Prediction) LSTM Baseline을 우선 구현하였다.
+- 모델은 LSTM 기반 시계열 회귀 구조로, 입력 X는 (batch, seq_len, feature_dim) 형태의 윈도우 텐서이며 출력은 (batch, 1) 형태의 “다음 시점 로그수익률 점 예측값”으로 정의하였다.
+- 구현 모델은 src/models/lstm_point.py의 LSTMPointPredictor이며, LSTM 출력의 마지막 타임스텝 hidden을 사용한 뒤 LayerNorm → Dropout → Linear(FC) 헤드를 연결하는 방식으로 구성하였다.
+- 보고서 실행 로그 기준, 모델은 hidden_size=64, num_layers=2, dropout=0.2 설정에서 최적 성능을 보였고, 총 학습 가능 파라미터 수는 54,209개로 확인하였다.
+
+[2] 손실함수/학습 안정화 기법 적용
+- Baseline 손실함수는 MSE를 사용하였으며, src/losses/mse_loss.py에 nn.MSELoss를 래핑한 형태로 구성하여 이후 Pinball Loss(Quantile Loss)로의 교체가 용이하도록 인터페이스를 정리하였다.
+- 학습 과정에서는 금융 시계열의 변동성 및 학습 불안정성을 고려하여 다음 안정화 기법을 적용/검토하였다.
+  · Gradient Clipping(max_norm=1.0): LSTM 학습에서 발생할 수 있는 폭발적 기울기(gradient explosion) 억제
+  · LayerNorm: 시점/배치 크기 변화에도 안정적인 정규화로 학습 수렴 안정화
+  · ReduceLROnPlateau 스케줄러: 검증 손실 개선이 정체될 때 학습률을 단계적으로 감소
+  · Early Stopping: 검증 손실 미개선 시 조기 종료(보고서 실행 로그 기준 patience=12)
+
+[3] 하이퍼파라미터 그리드 탐색 및 최적 설정 선정
+- 학습률(LR), 은닉 차원(Hidden size), 레이어 수(Num layers) 조합에 대해 4종 그리드 탐색을 수행하고, 검증(Val) MSE가 최소인 설정을 최적(best)로 선정하였다.
+- 보고서 정리 기준 결과는 다음과 같다(Val MSE 기준).
+  · Config A: LR=1e-3, H=32,  L=1  → Val MSE=0.07047
+  · Config B: LR=1e-3, H=64,  L=2  → Val MSE=0.06985  (최적)
+  · Config C: LR=5e-4, H=64,  L=2  → Val MSE=0.07012
+  · Config D: LR=1e-3, H=128, L=2  → Val MSE=0.07038
+
+[4] 성능 평가(Val/Test) 및 해석
+- Baseline 모델 성능은 단순 손실(MSE)뿐 아니라, 회귀 오차 및 금융 실용성을 반영하기 위해 MAE, RMSE, R², Directional Accuracy(방향 정확도)까지 함께 산출하였다.
+- 보고서 수치 기준 최적 설정(LR=1e-3, H=64, L=2)의 성능은 다음과 같다.
+  · Val:  MAE=0.2103, RMSE=0.2643, R²=0.0058, Directional Acc.=71.1%
+  · Test: MAE=0.1916, RMSE=0.2502, R²=-0.063,  Directional Acc.=75.0%
+- R²가 0 근처(또는 음수)로 나타난 점은 로그수익률 점 예측의 본질적 난이도(시장 준효율성, 잡음 지배)를 반영하는 것으로 해석하였고, 반면 Directional Accuracy가 50%(랜덤) 대비 유의미하게 높은 수준으로 나타나 “방향성 예측” 측면의 활용 가능성을 확인하였다.
+- 또한 수익률은 0 근처 값이 빈번하여 MAPE가 과대 왜곡될 수 있음을 확인하고, 금융 수익률 예측에서는 MAPE 단독 해석의 한계를 함께 정리하였다.
+
+[5] 시각화 및 잔차 분석 기반의 개선 포인트 도출
+- 학습 곡선(Train/Val MSE)을 통해 대부분 설정이 초기 에폭에서 급격히 감소 후 수렴하며, Early Stopping으로 과적합 구간 진입 전 학습이 종료되도록 관리하였다.
+- 예측값 vs 실제값 비교(시계열/산점도)를 통해, 예측이 실제 진폭 대비 ‘0(평균) 근처로 수렴’하며 과소추정하는 경향(regression-to-mean)이 관찰되었다. 이는 MSE 손실 특성상 분포 중심(평균)으로 수렴하는 점 예측의 한계로 해석하였다.
+- 잔차(실제-예측) 분포 및 잔차 시계열 분석을 수행하여, 변동성 군집(Volatility Clustering) 구간에서 잔차가 증가(±2σ 이탈)하는 패턴을 확인하였다. 이를 통해 “극단 상황/꼬리 위험(Tail Risk)”을 반영하기 위해 6차시부터 분위수 기반 확률 예측(Quantile LSTM)로 확장할 필요성을 도출하였다.
+
+[6] 산출물 정리 및 6차시 연계 계획
+- Baseline 결과는 6차시 Quantile 모델의 비교 기준점으로 사용하며, 이후 Pinball Loss(분위수 손실)를 직접 구현한 Quantile LSTM에서 Baseline 대비 성능 개선 여부를 정량적으로 검증할 예정이다.
+- 특히 점 예측이 제공하지 못하는 분포/불확실성 정보를 분위수 예측으로 보완하여, 동적 리스크 지표(VaR 등) 산출로 연계하는 방향을 명확히 하였다.
+
+2) 활동자료(근거 자료)
+- 코드
+  · src/models/lstm_point.py
+  · src/losses/mse_loss.py
+  · src/evluation/metrics.py
+  · notebooks/04_baseline_lstm.py
+- 보고서 원문(참고한 docx)
+  · KIUM_활동보고서_5차시.docx
+  · KIUM_활동보고서_5차시_별지.docx
+- 데이터(학습 입력)
+  · data/splits/windows.npz
+
+(끝)

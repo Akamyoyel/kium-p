@@ -1,0 +1,7 @@
+numpy>=1.26
+pandas>=2.2
+yfinance>=0.2.54
+pykrx>=1.0.48
+matplotlib>=3.8
+seaborn>=0.13
+statsmodels>=0.14
